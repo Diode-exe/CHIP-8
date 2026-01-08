@@ -20,6 +20,26 @@ class Chip8:
         self.sound_timer = 0
         self.stack = []
         self.key = [0] * 16
+        self.font_set = [
+            0xF0, 0x90, 0x90, 0x90, 0xF0, # 0
+            0x20, 0x60, 0x20, 0x20, 0x70, # 1
+            0xF0, 0x10, 0xF0, 0x80, 0xF0, # 2
+            0xF0, 0x10, 0xF0, 0x10, 0xF0, # 3
+            0x90, 0x90, 0xF0, 0x10, 0x10, # 4
+            0xF0, 0x80, 0xF0, 0x10, 0xF0, # 5
+            0xF0, 0x80, 0xF0, 0x90, 0xF0, # 6
+            0xF0, 0x10, 0x20, 0x40, 0x40, # 7
+            0xF0, 0x90, 0xF0, 0x90, 0xF0, # 8
+            0xF0, 0x90, 0xF0, 0x10, 0xF0, # 9
+            0xF0, 0x90, 0xF0, 0x90, 0x90, # A
+            0xE0, 0x90, 0xE0, 0x90, 0xE0, # B
+            0xF0, 0x80, 0x80, 0x80, 0xF0, # C
+            0xE0, 0x90, 0x90, 0x90, 0xE0, # D
+            0xF0, 0x80, 0xF0, 0x80, 0xF0, # E
+            0xF0, 0x80, 0xF0, 0x80, 0x80  # F
+        ]
+        for i in range(len(self.font_set)):
+            self.memory[i] = self.font_set[i]
 
     def load_rom(self, filename):
         with open(filename, "rb") as f:
@@ -46,12 +66,6 @@ class Chip8:
             nn = opcode & 0x00FF
             if self.V[x] == nn:
                 self.pc += 2  # Skip the next instruction
-        elif opcode & 0xF000 == 0x3000:  # 3XNN
-            # Matches 3XNN: Skip next instruction if Vx == NN (redundant handler)
-            x = (opcode & 0x0F00) >> 8   # X = 0
-            nn = opcode & 0x00FF          # NN = 0
-            if self.V[x] == nn:
-                self.pc += 2  # Skip next instruction
         elif opcode & 0xF000 == 0x2000:  # 2NNN: call subroutine at NNN
             # Matches 2NNN: Call subroutine at address NNN
             nnn = opcode & 0x0FFF
@@ -240,6 +254,11 @@ class Chip8:
             y = (opcode & 0x00F0) >> 4
             self.V[x] = self.V[x] ^ self.V[y]
 
+        elif opcode & 0xF000 == 0xB000:
+            # Matches BNNN: Jump to address NNN + V0
+            nnn = opcode & 0x0FFF
+            self.pc = nnn + self.V[0]
+
         else:
             print(f"Unknown opcode: {opcode:04X}")
 
@@ -252,11 +271,13 @@ class Chip8:
 # Minimal Pygame window for display
 def main():
     chip = Chip8()
-    chip.load_rom("roms/CHIP8.rom")
+    chip.load_rom("roms/pong.ch8")
 
     pygame.init()
     window = pygame.display.set_mode((640, 320))  # 10x scale
     clock = pygame.time.Clock()
+    pygame.mixer.init()
+    beep = pygame.mixer.Sound("tone.wav")
 
     while True:
         chip.cycle()
@@ -273,7 +294,7 @@ def main():
                     chip.key[key_map[event.key]] = 0
         
         if chip.sound_timer > 0:
-            print('\a')
+            beep.play()
 
         # Draw graphics
         window.fill((0, 0, 0))
