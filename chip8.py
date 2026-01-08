@@ -1,6 +1,14 @@
 import pygame
 import sys
 import random
+import tkinter
+from tkinter import messagebox
+
+def show_message(title, text):
+    root = tkinter.Tk()
+    root.withdraw()  # Hide the main window
+    messagebox.showinfo(title, text)
+    root.destroy()
 
 key_map = {
     pygame.K_1: 0x1, pygame.K_2: 0x2, pygame.K_3: 0x3, pygame.K_4: 0xC,
@@ -40,6 +48,7 @@ class Chip8:
         ]
         for i in range(len(self.font_set)):
             self.memory[i] = self.font_set[i]
+        self.halted = False
 
     def load_rom(self, filename):
         with open(filename, "rb") as f:
@@ -69,7 +78,13 @@ class Chip8:
         elif opcode & 0xF000 == 0x2000:  # 2NNN: call subroutine at NNN
             # Matches 2NNN: Call subroutine at address NNN
             nnn = opcode & 0x0FFF
-            self.stack.append(self.pc)
+            if len(self.stack) < 16:
+                self.stack.append(self.pc)
+                self.pc = nnn
+            else:
+                print("Stack overflow!")
+                self.halted = True
+                show_message("Halted!", "Emulator halted due to stack overflow!")
             self.pc = nnn
         elif opcode & 0xF000 == 0xA000:  # ANNN: set I = NNN
             # Matches ANNN: Set I = NNN
@@ -99,7 +114,12 @@ class Chip8:
             self.pc = nnn
         elif opcode & 0xF000 == 0x0000 and opcode & 0x00FF == 0xEE:  # 00EE: return from subroutine
             # Matches 00EE: Return from subroutine
-            self.pc = self.stack.pop()
+            if self.stack:
+                self.pc = self.stack.pop()
+            else:
+                print("Stack underflow!")
+                self.halted = True
+                show_message("Halted!", "Emulator halted due to stack underflow!")
         elif opcode & 0xF000 == 0xF000 and opcode & 0x00FF == 0x33:  # Fx33: LD B, Vx
             # Matches Fx33: Store BCD of Vx at I, I+1, I+2
             x = (opcode & 0x0F00) >> 8
@@ -279,7 +299,7 @@ def main():
     pygame.mixer.init()
     beep = pygame.mixer.Sound("tone.wav")
 
-    while True:
+    while not chip.halted:
         chip.cycle()
 
         for event in pygame.event.get():
