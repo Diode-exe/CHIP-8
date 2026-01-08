@@ -297,6 +297,7 @@ def main():
     window = pygame.display.set_mode((640, 320))  # 10x scale
     clock = pygame.time.Clock()
     pygame.mixer.init()
+    pygame.display.set_caption("CHIP-8")
     beep = pygame.mixer.Sound("tone.wav")
 
     while not chip.halted:
