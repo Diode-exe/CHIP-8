@@ -294,6 +294,9 @@ class Chip8:
             for i in range(x + 1):
                 self.V[i] = self.R[i]
 
+        elif opcode & 0x00FF == 0x00FD:
+            sys.exit()
+
         else:
             print(f"Unknown opcode: {opcode:04X}")
 
