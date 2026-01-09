@@ -304,6 +304,27 @@ class Chip8:
         elif opcode & 0x00FF == 0x00FF:
             self.resMode = "high"
 
+        elif opcode & 0x00FF == 0x00CF:
+            # Matches 00CN: moves screen down by N
+            n = (opcode & 0x000F) >> 8
+            height = len(self.gfx)
+            width = len(self.gfx[0])
+            self.gfx[n:] = self.gfx[:-n]  # move all rows down by n
+            for i in range(n):
+                self.gfx[i] = [0] * width
+
+        elif opcode & 0x00FF == 0x00FB:
+            # Matches 00FB: moves screen left by 4
+            for row in self.gfx:
+                row[4:] = row[:-4]  # move pixels right by 4
+                row[:4] = [0] * 4   # clear leftmost 4 pixels
+
+        elif opcode & 0x00FF == 0x00FC:
+            # Matches 00FC: moves screen right by 4
+            for row in self.gfx:
+                row[:-4] = row[4:]  # move pixels left by 4
+                row[-4:] = [0] * 4  # clear rightmost 4 pixels
+
         else:
             print(f"Unknown opcode: {opcode:04X}")
 
