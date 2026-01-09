@@ -52,6 +52,7 @@ class Chip8:
             self.memory[i] = self.font_set[i]
         self.halted = False
         self.R = [0]*8
+        self.resMode = "low"
 
     def load_rom(self, rom):
         with open(rom, "rb") as f:
@@ -297,6 +298,12 @@ class Chip8:
         elif opcode & 0x00FF == 0x00FD:
             sys.exit()
 
+        elif opcode & 0x00FF == 0x00FE:
+            self.resMode = "low"
+        
+        elif opcode & 0x00FF == 0x00FF:
+            self.resMode = "high"
+
         else:
             print(f"Unknown opcode: {opcode:04X}")
 
@@ -367,10 +374,16 @@ def main(chip):
 
         # Draw graphics
         window.fill((0, 0, 0))
-        for y in range(32):
-            for x in range(64):
-                if chip.gfx[y][x]:
-                    pygame.draw.rect(window, (255, 255, 255), (x*10, y*10, 10, 10))
+        if chip.resMode == "low":
+            for y in range(32):
+                for x in range(64):
+                    if chip.gfx[y][x]:
+                        pygame.draw.rect(window, (255, 255, 255), (x*10, y*10, 10, 10))
+        else:
+            for y in range(64):
+                for x in range(128):
+                    if chip.gfx[y][x]:
+                        pygame.draw.rect(window, (255, 255, 255), (x*10, y*10, 10, 10))
         pygame.display.flip()
 
         clock.tick(240)
