@@ -51,6 +51,7 @@ class Chip8:
         for i in range(len(self.font_set)):
             self.memory[i] = self.font_set[i]
         self.halted = False
+        self.R = [0]*8
 
     def load_rom(self, rom):
         with open(rom, "rb") as f:
@@ -280,6 +281,18 @@ class Chip8:
             # Matches BNNN: Jump to address NNN + V0
             nnn = opcode & 0x0FFF
             self.pc = nnn + self.V[0]
+
+        elif opcode & 0xF0FF == 0xF075:
+            # Matches Fx75: Load Vx into R
+            x = (opcode & 0x0F00) >> 8
+            for i in range(x + 1):
+                self.R[i] = self.V[i]
+        
+        elif opcode & 0xF0FF == 0xF085:
+            # Fx85: Load V0..Vx from R[0..x]
+            x = (opcode & 0x0F00) >> 8
+            for i in range(x + 1):
+                self.V[i] = self.R[i]
 
         else:
             print(f"Unknown opcode: {opcode:04X}")
