@@ -1,14 +1,12 @@
 import pygame
 import sys
 import random
-import tkinter
+import tkinter as tk
 from tkinter import messagebox
+from tkinter.filedialog import askopenfilename
+import threading
 
-def show_message(title, text):
-    root = tkinter.Tk()
-    root.withdraw()  # Hide the main window
-    messagebox.showinfo(title, text)
-    root.destroy()
+root = tk.Tk()
 
 key_map = {
     pygame.K_1: 0x1, pygame.K_2: 0x2, pygame.K_3: 0x3, pygame.K_4: 0xC,
@@ -16,6 +14,10 @@ key_map = {
     pygame.K_a: 0x7, pygame.K_s: 0x8, pygame.K_d: 0x9, pygame.K_f: 0xE,
     pygame.K_z: 0xA, pygame.K_x: 0x0, pygame.K_c: 0xB, pygame.K_v: 0xF,
 }
+
+# Global reference to the running emulator thread and chip instance
+emu_thread = None
+chip = None
 
 class Chip8:
     def __init__(self):
@@ -50,8 +52,8 @@ class Chip8:
             self.memory[i] = self.font_set[i]
         self.halted = False
 
-    def load_rom(self, filename):
-        with open(filename, "rb") as f:
+    def load_rom(self, rom):
+        with open(rom, "rb") as f:
             rom = f.read()
             for i, byte in enumerate(rom):
                 self.memory[0x200 + i] = byte
@@ -84,7 +86,7 @@ class Chip8:
             else:
                 print("Stack overflow!")
                 self.halted = True
-                show_message("Halted!", "Emulator halted due to stack overflow!")
+                self.show_message("Halted!", "Emulator halted due to stack overflow!")
             self.pc = nnn
         elif opcode & 0xF000 == 0xA000:  # ANNN: set I = NNN
             # Matches ANNN: Set I = NNN
@@ -119,7 +121,7 @@ class Chip8:
             else:
                 print("Stack underflow!")
                 self.halted = True
-                show_message("Halted!", "Emulator halted due to stack underflow!")
+                self.show_message("Halted!", "Emulator halted due to stack underflow!")
         elif opcode & 0xF000 == 0xF000 and opcode & 0x00FF == 0x33:  # Fx33: LD B, Vx
             # Matches Fx33: Store BCD of Vx at I, I+1, I+2
             x = (opcode & 0x0F00) >> 8
@@ -288,11 +290,40 @@ class Chip8:
         if self.sound_timer > 0:
             self.sound_timer -= 1
 
-# Minimal Pygame window for display
-def main():
-    chip = Chip8()
-    chip.load_rom("roms/pong.ch8")
+    def show_message(self, title, text):
+        messagebox.showinfo(title, text)
 
+def start_emulator(rom_path):
+    global emu_thread, chip
+    # If an emulator is already running, halt it and wait for thread to finish
+    if chip is not None:
+        chip.halted = True
+        if emu_thread is not None:
+            emu_thread.join()
+    # Create a new Chip8 instance and start the emulator thread
+    chip = Chip8()
+    chip.load_rom(rom_path)
+    emu_thread = threading.Thread(target=main, args=(chip,))
+    emu_thread.daemon = True
+    emu_thread.start()
+
+def stop_emulator():
+    pass  # Not needed; handled by halted flag
+
+def file_picker():
+    rom = askopenfilename()
+    if rom:
+        start_emulator(rom)
+    else:
+        rom = "roms/PONG.ch8"
+        start_emulator(rom)
+
+def halt_emu():
+    global chip
+    if chip is not None:
+        chip.halted = True
+
+def main(chip):
     pygame.init()
     window = pygame.display.set_mode((640, 320))  # 10x scale
     clock = pygame.time.Clock()
@@ -305,6 +336,7 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                chip.halted = True
                 pygame.quit()
                 sys.exit()
             elif event.type == pygame.KEYDOWN:
@@ -328,5 +360,8 @@ def main():
         clock.tick(240)
 
 if __name__ == "__main__":
-    main()
-    
+    fpBtn = tk.Button(root, text="Load ROM", command=file_picker)
+    fpBtn.pack()
+    haltBtn = tk.Button(root, text="Halt Emulation", command=halt_emu)
+    haltBtn.pack()
+    root.mainloop()
