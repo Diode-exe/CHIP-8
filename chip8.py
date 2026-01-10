@@ -359,8 +359,11 @@ def file_picker():
     if rom:
         start_emulator(rom)
     else:
-        rom = "roms/PONG.ch8"
-        start_emulator(rom)
+        try:
+            rom = "roms/PONG.ch8"
+            start_emulator(rom)
+        except FileNotFoundError:
+            print("PONG.ch8 not found, no fallback")
 
 def halt_emu():
     global chip
