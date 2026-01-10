@@ -306,7 +306,7 @@ class Chip8:
 
         elif opcode & 0x00FF == 0x00CF:
             # Matches 00CN: moves screen down by N
-            n = (opcode & 0x000F) >> 8
+            n = opcode & 0x000F >> 8
             height = len(self.gfx)
             width = len(self.gfx[0])
             self.gfx[n:] = self.gfx[:-n]  # move all rows down by n
