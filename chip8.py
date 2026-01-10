@@ -351,9 +351,6 @@ def start_emulator(rom_path):
     emu_thread.daemon = True
     emu_thread.start()
 
-def stop_emulator():
-    pass  # Not needed; handled by halted flag
-
 def file_picker():
     rom = askopenfilename()
     if rom:
