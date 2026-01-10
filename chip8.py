@@ -53,6 +53,9 @@ class Chip8:
         self.halted = False
         self.R = [0]*8
         self.resMode = "low"
+        self.maxX = 64 if self.resMode == "low" else 128
+        self.maxY = 32 if self.resMode == "low" else 64
+
 
     def load_rom(self, rom):
         with open(rom, "rb") as f:
@@ -96,16 +99,18 @@ class Chip8:
             self.I = nnn
         elif opcode & 0xF000 == 0xD000:  # DXYN: draw sprite
             # Matches DXYN: Draw sprite at (Vx, Vy) with N bytes of sprite data
-            x = self.V[(opcode & 0x0F00) >> 8]
-            y = self.V[(opcode & 0x00F0) >> 4]
+            x = self.V[(opcode & 0x0F00) >> 8] % 64
+            y = self.V[(opcode & 0x00F0) >> 4] % 32
             height = opcode & 0x000F
             self.V[0xF] = 0
             for row in range(height):
                 pixel = self.memory[self.I + row]
                 for col in range(8):
                     if (pixel & (0x80 >> col)) != 0:
-                        if self.gfx[(y + row) % 32][(x + col) % 64] == 1:
+                        if self.gfx[(y + row) % 32 >= chip.maxY][(x + col) % 64 >= chip.maxX] == 1:
                             self.V[0xF] = 1
+                        else:
+                            break
                         self.gfx[(y + row) % 32][(x + col) % 64] ^= 1
         elif opcode & 0xF000 == 0x7000:  # 7XNN: add NN to VX
             # Matches 7XNN: Add NN to Vx
@@ -136,11 +141,12 @@ class Chip8:
             x = (opcode & 0x0F00) >> 8
             for i in range(x + 1):
                 self.V[i] = self.memory[self.I + i]
+            self.I = self.I + x + 1
 
         elif opcode & 0xF000 == 0xF000 and opcode & 0x00FF == 0x29:
             # Matches Fx29: Set I to location of sprite for digit Vx
             x = (opcode & 0x0F00) >> 8
-            self.I = self.V[x] * 5  # Each font sprite is 5 bytes
+            self.I = (self.V[x] & 0xF) * 5  # Each font sprite is 5 bytes
 
         elif opcode & 0xF000 == 0xF000 and opcode & 0x00FF == 0x07:
             # Matches Fx07: Set Vx = delay timer
@@ -155,13 +161,13 @@ class Chip8:
         elif opcode & 0xF0FF == 0xE0A1:
             # Matches ExA1: Skip next instruction if key[Vx] is not pressed
             x = (opcode & 0x0F00) >> 8
-            if not self.key[self.V[x]]:
+            if not self.key[self.V[x] & 0xF]:
                 self.pc += 2
 
         elif opcode & 0xF0FF == 0xE09E:
             # Matches Ex9E: Skip next instruction if key[Vx] is pressed
             x = (opcode & 0x0F00) >> 8
-            if self.key[self.V[x]]:
+            if self.key[self.V[x] & 0xF]:
                 self.pc += 2
 
         elif opcode & 0xF000 == 0xC000:
@@ -201,8 +207,8 @@ class Chip8:
             # Matches 8xy5: Subtract X from Y
             x = (opcode & 0x0F00) >> 8
             y = (opcode & 0x00F0) >> 4
-            self.V[0xF] = 1 if self.V[x] >= self.V[y] else 0
             self.V[x] = (self.V[x] - self.V[y]) & 0xFF
+            self.V[0xF] = 1 if self.V[x] >= self.V[y] else 0
             
         elif opcode & 0xF0FF == 0xF018:
             # Matches Fx18: copies x to sound_timer
@@ -218,20 +224,20 @@ class Chip8:
         elif opcode & 0xF00F == 0x8006:
             # Matches 8xy6: Set Vx = Vx >> 1, VF = least significant bit of Vx before shift
             x = (opcode & 0x0F00) >> 8
-            self.V[0xF] = self.V[x] & 0x1
             self.V[x] = self.V[x] >> 1
+            self.V[0xF] = self.V[x] & 0x1
 
         elif opcode & 0xF00F == 0x8007:
             # Matches 8xy7: Set Vx = Vy - Vx, VF = 1 if Vy > Vx else 0
             x = (opcode & 0x0F00) >> 8
             y = (opcode & 0x00F0) >> 4
-            self.V[0xF] = 1 if self.V[y] > self.V[x] else 0
             self.V[x] = (self.V[y] - self.V[x]) & 0xFF
+            self.V[0xF] >= 1 if self.V[y] > self.V[x] else 0
 
         elif opcode & 0xF00F == 0x800E:
             # Matches 8xyE: Set Vx = Vx << 1, VF = most significant bit of Vx before shift
             x = (opcode & 0x0F00) >> 8
-            self.V[0xF] = (self.V[x] & 0x80) >> 7
+            self.V[0xF] >= (self.V[x] & 0x80) >> 7
             self.V[x] = (self.V[x] << 1) & 0xFF
 
         elif opcode & 0xF00F == 0x9000:
@@ -300,9 +306,13 @@ class Chip8:
 
         elif opcode & 0x00FF == 0x00FE:
             self.resMode = "low"
+            self.maxX = "64"
+            self.maxY = "32"
         
         elif opcode & 0x00FF == 0x00FF:
             self.resMode = "high"
+            self.maxX = "128"
+            self.maxY = "64"
 
         elif opcode & 0x00FF == 0x00CF:
             # Matches 00CN: moves screen down by N
@@ -396,13 +406,13 @@ def main(chip):
         # Draw graphics
         window.fill((0, 0, 0))
         if chip.resMode == "low":
-            for y in range(32):
-                for x in range(64):
+            for y in range(chip.maxY):
+                for x in range(chip.maxX):
                     if chip.gfx[y][x]:
                         pygame.draw.rect(window, (255, 255, 255), (x*10, y*10, 10, 10))
         else:
-            for y in range(64):
-                for x in range(128):
+            for y in range(chip.maxY):
+                for x in range(chip.maxX):
                     if chip.gfx[y][x]:
                         pygame.draw.rect(window, (255, 255, 255), (x*10, y*10, 10, 10))
         pygame.display.flip()
