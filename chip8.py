@@ -342,8 +342,10 @@ def start_emulator(rom_path):
     # If an emulator is already running, halt it and wait for thread to finish
     if chip is not None:
         chip.halted = True
-        if emu_thread is not None:
-            emu_thread.join()
+    if emu_thread is not None and emu_thread.is_alive():
+        emu_thread.join()
+    chip = None
+    emu_thread = None
     # Create a new Chip8 instance and start the emulator thread
     chip = Chip8()
     chip.load_rom(rom_path)
@@ -363,9 +365,29 @@ def file_picker():
             print("PONG.ch8 not found, no fallback")
 
 def halt_emu():
-    global chip
-    if chip is not None:
-        chip.halted = True
+    global chip, emu_thread
+    try:
+        if chip is not None:
+            chip.halted = True
+            print("Emulator halted")
+            if emu_thread is not None and emu_thread.is_alive():
+                emu_thread.join()
+                print("Emulator thread stopped")
+    except AttributeError:
+        print("Emulator not started, nothing to halt...")
+
+def unhalt_emu():
+    global chip, emu_thread
+    try:
+        if chip is not None and emu_thread is not None and not emu_thread.is_alive():
+            print("Emulator thread is not running. Please load a ROM to restart.")
+        elif chip is not None and emu_thread is not None and emu_thread.is_alive():
+            chip.halted = False
+            print("Emulator unhalted")
+        else:
+            print("Emulator not started, nothing to unhalt...")
+    except AttributeError:
+        print("Emulator not started, nothing to unhalt...")
 
 def main(chip):
     pygame.init()
@@ -414,5 +436,6 @@ if __name__ == "__main__":
     fpBtn.pack()
     haltBtn = tk.Button(root, text="Halt Emulation", command=halt_emu)
     haltBtn.pack()
+    unhaltBtn = tk.Button(root, text="Unhalt Emulation", command=unhalt_emu)
+    unhaltBtn.pack()
     root.mainloop()
-
