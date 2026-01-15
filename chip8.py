@@ -415,3 +415,4 @@ if __name__ == "__main__":
     haltBtn = tk.Button(root, text="Halt Emulation", command=halt_emu)
     haltBtn.pack()
     root.mainloop()
+
