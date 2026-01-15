@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import messagebox
 from tkinter.filedialog import askopenfilename
 import threading
+import time
 
 root = tk.Tk()
 
@@ -51,6 +52,7 @@ class Chip8:
         for i in range(len(self.font_set)):
             self.memory[i] = self.font_set[i]
         self.halted = False
+        self.running = True
         self.R = [0]*8
         self.resMode = "low"
 
@@ -341,7 +343,8 @@ def start_emulator(rom_path):
     global emu_thread, chip
     # If an emulator is already running, halt it and wait for thread to finish
     if chip is not None:
-        chip.halted = True
+        # signal the previous thread to stop
+        chip.running = False
     if emu_thread is not None and emu_thread.is_alive():
         emu_thread.join()
     chip = None
@@ -368,11 +371,11 @@ def halt_emu():
     global chip, emu_thread
     try:
         if chip is not None:
+            # Pause emulation instead of stopping the thread so unhalt can resume
             chip.halted = True
-            print("Emulator halted")
-            if emu_thread is not None and emu_thread.is_alive():
-                emu_thread.join()
-                print("Emulator thread stopped")
+            print("Emulator halted (paused)")
+        else:
+            print("Emulator not started, nothing to halt...")
     except AttributeError:
         print("Emulator not started, nothing to halt...")
 
@@ -383,7 +386,7 @@ def unhalt_emu():
             print("Emulator thread is not running. Please load a ROM to restart.")
         elif chip is not None and emu_thread is not None and emu_thread.is_alive():
             chip.halted = False
-            print("Emulator unhalted")
+            print("Emulator unhalted (resumed)")
         else:
             print("Emulator not started, nothing to unhalt...")
     except AttributeError:
@@ -396,40 +399,55 @@ def main(chip):
     pygame.mixer.init()
     pygame.display.set_caption("CHIP-8")
     beep = pygame.mixer.Sound("tone.wav")
+    try:
+        while chip.running:
+            if chip.halted:
+                # paused — sleep briefly to avoid busy-loop
+                time.sleep(0.01)
+                continue
 
-    while not chip.halted:
-        chip.cycle()
+            chip.cycle()
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                chip.halted = True
-                pygame.quit()
-                sys.exit()
-            elif event.type == pygame.KEYDOWN:
-                if event.key in key_map:
-                    chip.key[key_map[event.key]] = 1
-            elif event.type == pygame.KEYUP:
-                if event.key in key_map:
-                    chip.key[key_map[event.key]] = 0
-        
-        if chip.sound_timer > 0:
-            beep.play()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    chip.halted = True
+                    chip.running = False
+                    pygame.quit()
+                    sys.exit()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in key_map:
+                        chip.key[key_map[event.key]] = 1
+                elif event.type == pygame.KEYUP:
+                    if event.key in key_map:
+                        chip.key[key_map[event.key]] = 0
+            
+            if chip.sound_timer > 0:
+                beep.play()
 
-        # Draw graphics
-        window.fill((0, 0, 0))
-        if chip.resMode == "low":
-            for y in range(32):
-                for x in range(64):
-                    if chip.gfx[y][x]:
-                        pygame.draw.rect(window, (255, 255, 255), (x*10, y*10, 10, 10))
-        else:
-            for y in range(64):
-                for x in range(128):
-                    if chip.gfx[y][x]:
-                        pygame.draw.rect(window, (255, 255, 255), (x*10, y*10, 10, 10))
-        pygame.display.flip()
+            # Draw graphics
+            window.fill((0, 0, 0))
+            if chip.resMode == "low":
+                for y in range(32):
+                    for x in range(64):
+                        if chip.gfx[y][x]:
+                            pygame.draw.rect(window, (255, 255, 255), (x*10, y*10, 10, 10))
+            else:
+                for y in range(64):
+                    for x in range(128):
+                        if chip.gfx[y][x]:
+                            pygame.draw.rect(window, (255, 255, 255), (x*10, y*10, 10, 10))
+            pygame.display.flip()
 
-        clock.tick(240)
+            clock.tick(240)
+    finally:
+        try:
+            pygame.mixer.quit()
+        except Exception:
+            pass
+        try:
+            pygame.quit()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     fpBtn = tk.Button(root, text="Load ROM", command=file_picker)
