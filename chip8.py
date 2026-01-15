@@ -55,6 +55,7 @@ class Chip8:
         self.running = True
         self.R = [0]*8
         self.resMode = "low"
+        self.waiting_for_key = None
 
     def load_rom(self, rom):
         with open(rom, "rb") as f:
@@ -63,6 +64,20 @@ class Chip8:
                 self.memory[0x200 + i] = byte
 
     def cycle(self):
+        # If we're waiting for a key (Fx0A), poll the key state and only
+        # resume execution when one is pressed. This keeps the event loop
+        # responsive and avoids re-executing the instruction in a busy way.
+        if self.waiting_for_key is not None:
+            for i in range(16):
+                if self.key[i]:
+                    self.V[self.waiting_for_key] = i
+                    self.waiting_for_key = None
+                    # advance past the Fx0A instruction (we backed up pc when
+                    # entering waiting state)
+                    self.pc += 2
+                    break
+            return
+
         # Fetch
         opcode = (self.memory[self.pc] << 8) | self.memory[self.pc + 1]
         self.pc += 2
@@ -91,7 +106,6 @@ class Chip8:
                 print("Stack overflow!")
                 self.halted = True
                 self.show_message("Halted!", "Emulator halted due to stack overflow!")
-            self.pc = nnn
         elif opcode & 0xF000 == 0xA000:  # ANNN: set I = NNN
             # Matches ANNN: Set I = NNN
             nnn = opcode & 0x0FFF
@@ -157,13 +171,15 @@ class Chip8:
         elif opcode & 0xF0FF == 0xE0A1:
             # Matches ExA1: Skip next instruction if key[Vx] is not pressed
             x = (opcode & 0x0F00) >> 8
-            if not self.key[self.V[x]]:
+            vx = self.V[x] & 0xF
+            if not self.key[vx]:
                 self.pc += 2
 
         elif opcode & 0xF0FF == 0xE09E:
             # Matches Ex9E: Skip next instruction if key[Vx] is pressed
             x = (opcode & 0x0F00) >> 8
-            if self.key[self.V[x]]:
+            vx = self.V[x] & 0xF
+            if self.key[vx]:
                 self.pc += 2
 
         elif opcode & 0xF000 == 0xC000:
@@ -248,14 +264,17 @@ class Chip8:
         elif opcode & 0xF0FF == 0xF00A:
             # Matches Fx0A: Wait until key press (key is x)
             x = (opcode & 0x0F00) >> 8
-            key_pressed = False
+            # If a key is already pressed, store it and continue.
             for i in range(16):
                 if self.key[i]:
                     self.V[x] = i
-                    key_pressed = True
                     break
-            if not key_pressed:
-                self.pc -= 2  # Repeat this instruction until a key is pressed
+            else:
+                # No key pressed: enter waiting state. Back up PC so the
+                # instruction remains the same until a key is received.
+                self.waiting_for_key = x
+                self.pc -= 2
+                return
         
         elif opcode & 0xF0FF == 0xF01E:
             # Matches Fx1E: Adds x to I
@@ -308,7 +327,7 @@ class Chip8:
 
         elif opcode & 0x00FF == 0x00CF:
             # Matches 00CN: moves screen down by N
-            n = (opcode & 0x000F) >> 8
+            n = opcode & 0x000F
             height = len(self.gfx)
             width = len(self.gfx[0])
             self.gfx[n:] = self.gfx[:-n]  # move all rows down by n
@@ -423,6 +442,11 @@ def main(chip):
             
             if chip.sound_timer > 0:
                 beep.play()
+
+            # If we're waiting for a key, sleep briefly to avoid busy-looping
+            # while still processing events above.
+            if chip.waiting_for_key is not None:
+                time.sleep(0.01)
 
             # Draw graphics
             window.fill((0, 0, 0))
