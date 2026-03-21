@@ -11,8 +11,6 @@ import sys
 import random
 import pygame
 
-# UI and runtime state are encapsulated in EmulatorApp (below) to avoid globals.
-
 class Chip8:
     """Represents the state of a CHIP-8 virtual machine, including memory, registers,
     graphics, timers, and input. Provides methods to load ROMs and execute cycles."""
