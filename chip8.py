@@ -44,8 +44,8 @@ class Chip8:
             0xF0, 0x80, 0xF0, 0x80, 0xF0, # E
             0xF0, 0x80, 0xF0, 0x80, 0x80  # F
         ]
-        for i, _, in enumerate(self.font_set):
-            self.memory[i] = self.font_set[i]
+        for i, byte in enumerate(self.font_set):
+            self.memory[i] = byte
         self.halted = False
         self.running = True
         self.r = [0]*8
@@ -385,7 +385,12 @@ class EmulatorApp:
 
         # Start new emulator
         self.chip = Chip8()
-        self.chip.load_rom(rom_path)
+        try:
+            self.chip.load_rom(rom_path)
+        except FileNotFoundError:
+            print(f"ROM not found: {rom_path}")
+            self.chip = None
+            return
         self.emu_thread = threading.Thread(target=self.main)
         self.emu_thread.daemon = True
         self.emu_thread.start()
@@ -431,9 +436,9 @@ class EmulatorApp:
             pygame.mixer.init()
             try:
                 beep = pygame.mixer.Sound("tone.wav")
-            except pygame.error:
+            except Exception:
                 beep = None
-        except pygame.error:
+        except Exception:
             beep = None
         pygame.display.set_caption("CHIP-8")
         try:
@@ -460,7 +465,7 @@ class EmulatorApp:
                 if self.chip.sound_timer > 0 and beep:
                     try:
                         beep.play()
-                    except pygame.error:
+                    except Exception:
                         pass
 
                 if self.chip.waiting_for_key is not None:
@@ -477,13 +482,12 @@ class EmulatorApp:
         finally:
             try:
                 pygame.mixer.quit()
-            except pygame.error:
+            except Exception:
                 pass
             try:
                 pygame.quit()
-            except pygame.error:
+            except Exception:
                 pass
-
 
 if __name__ == "__main__":
     app = EmulatorApp()
