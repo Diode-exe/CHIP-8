@@ -185,7 +185,7 @@ class Chip8:
         elif opcode & 0xF000 == 0xC000:
             # Matches CXNN: Set Vx = random byte & NN
             x = (opcode & 0x0F00) >> 8
-            kk = opcode & 0x00FF 
+            kk = opcode & 0x00FF
             self.V[x] = random.randint(0, 255) & kk
 
         elif opcode & 0xF00F == 0x8002:
@@ -205,10 +205,10 @@ class Chip8:
         elif opcode & 0xF000 == 0x4000:
             # Matches 4XNN: Skip next instruction if Vx != NN
             x = (opcode & 0x0F00) >> 8
-            kk = opcode & 0x00FF 
+            kk = opcode & 0x00FF
             if self.V[x] != kk:
                 self.pc += 2  # Skip next instruction
-        
+
         elif opcode & 0xF00F == 0x8000:
             # Matches 8xyN: Copy Y to X so (x = y)
             x = (opcode & 0x0F00) >> 8
@@ -221,12 +221,12 @@ class Chip8:
             y = (opcode & 0x00F0) >> 4
             self.V[0xF] = 1 if self.V[x] >= self.V[y] else 0
             self.V[x] = (self.V[x] - self.V[y]) & 0xFF
-            
+
         elif opcode & 0xF0FF == 0xF018:
             # Matches Fx18: copies x to sound_timer
             x = (opcode & 0x0F00) >> 8
             self.sound_timer = self.V[x]
-        
+
         elif opcode & 0xF00F == 0x5000:
             x = (opcode & 0x0F00) >> 8
             y = (opcode & 0x00F0) >> 4
@@ -260,7 +260,7 @@ class Chip8:
                 self.pc += 2
             else:
                 pass
-        
+
         elif opcode & 0xF0FF == 0xF00A:
             # Matches Fx0A: Wait until key press (key is x)
             x = (opcode & 0x0F00) >> 8
@@ -275,12 +275,12 @@ class Chip8:
                 self.waiting_for_key = x
                 self.pc -= 2
                 return
-        
+
         elif opcode & 0xF0FF == 0xF01E:
             # Matches Fx1E: Adds x to I
             x = (opcode & 0x0F00) >> 8
             self.I = (self.I + self.V[x]) & 0xFFFF  # I is 12 bits, but 16 is safe
-        
+
         elif opcode & 0xF0FF == 0xF055:
             # Matches Fx55: Store V0 to Vx in memory starting at I
             x = (opcode & 0x0F00) >> 8
@@ -309,7 +309,7 @@ class Chip8:
             x = (opcode & 0x0F00) >> 8
             for i in range(x + 1):
                 self.R[i] = self.V[i]
-        
+
         elif opcode & 0xF0FF == 0xF085:
             # Fx85: Load V0..Vx from R[0..x]
             x = (opcode & 0x0F00) >> 8
@@ -321,7 +321,7 @@ class Chip8:
 
         elif opcode & 0x00FF == 0x00FE:
             self.resMode = "low"
-        
+
         elif opcode & 0x00FF == 0x00FF:
             self.resMode = "high"
 
@@ -439,7 +439,7 @@ def main(chip):
                 elif event.type == pygame.KEYUP:
                     if event.key in key_map:
                         chip.key[key_map[event.key]] = 0
-            
+
             if chip.sound_timer > 0:
                 beep.play()
 
