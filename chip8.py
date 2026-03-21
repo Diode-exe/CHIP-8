@@ -1,11 +1,15 @@
-import pygame
-import sys
-import random
+"""CHIP-8 emulator in Python with Tkinter and Pygame.
+Supports loading ROMs, halting/unhalting emulation, and includes a simple
+GUI for interaction. Implements the full CHIP-8 instruction set and basic graphics rendering."""
+
+import time
 import tkinter as tk
 from tkinter import messagebox
 from tkinter.filedialog import askopenfilename
 import threading
-import time
+import sys
+import random
+import pygame
 
 root = tk.Tk()
 
