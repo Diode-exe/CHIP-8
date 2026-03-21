@@ -11,24 +11,15 @@ import sys
 import random
 import pygame
 
-root = tk.Tk()
-
-key_map = {
-    pygame.K_1: 0x1, pygame.K_2: 0x2, pygame.K_3: 0x3, pygame.K_4: 0xC,
-    pygame.K_q: 0x4, pygame.K_w: 0x5, pygame.K_e: 0x6, pygame.K_r: 0xD,
-    pygame.K_a: 0x7, pygame.K_s: 0x8, pygame.K_d: 0x9, pygame.K_f: 0xE,
-    pygame.K_z: 0xA, pygame.K_x: 0x0, pygame.K_c: 0xB, pygame.K_v: 0xF,
-}
-
-# Global reference to the running emulator thread and chip instance
-emu_thread = None
-chip = None
+# UI and runtime state are encapsulated in EmulatorApp (below) to avoid globals.
 
 class Chip8:
+    """Represents the state of a CHIP-8 virtual machine, including memory, registers,
+    graphics, timers, and input. Provides methods to load ROMs and execute cycles."""
     def __init__(self):
         self.memory = [0] * 4096
-        self.V = [0] * 16
-        self.I = 0
+        self.v = [0] * 16
+        self.i = 0
         self.pc = 0x200  # programs start at 0x200
         self.gfx = [[0] * 64 for _ in range(32)]
         self.delay_timer = 0
@@ -53,12 +44,11 @@ class Chip8:
             0xF0, 0x80, 0xF0, 0x80, 0xF0, # E
             0xF0, 0x80, 0xF0, 0x80, 0x80  # F
         ]
-        for i in range(len(self.font_set)):
+        for i, _, in enumerate(self.font_set):
             self.memory[i] = self.font_set[i]
         self.halted = False
         self.running = True
-        self.R = [0]*8
-        self.resMode = "low"
+        self.r = [0]*8
         self.waiting_for_key = None
 
     def load_rom(self, rom):
@@ -74,7 +64,7 @@ class Chip8:
         if self.waiting_for_key is not None:
             for i in range(16):
                 if self.key[i]:
-                    self.V[self.waiting_for_key] = i
+                    self.v[self.waiting_for_key] = i
                     self.waiting_for_key = None
                     # advance past the Fx0A instruction (we backed up pc when
                     # entering waiting state)
@@ -90,7 +80,7 @@ class Chip8:
             # Matches 6XNN: Set Vx = NN
             x = (opcode & 0x0F00) >> 8
             nn = opcode & 0x00FF
-            self.V[x] = nn
+            self.v[x] = nn
         elif opcode == 0x00E0:  # Clear screen
             # Matches 00E0: Clear the display
             self.gfx = [[0] * 64 for _ in range(32)]
@@ -98,7 +88,7 @@ class Chip8:
             # Matches 3XNN: Skip next instruction if Vx == NN
             x = (opcode & 0x0F00) >> 8
             nn = opcode & 0x00FF
-            if self.V[x] == nn:
+            if self.v[x] == nn:
                 self.pc += 2  # Skip the next instruction
         elif opcode & 0xF000 == 0x2000:  # 2NNN: call subroutine at NNN
             # Matches 2NNN: Call subroutine at address NNN
@@ -113,25 +103,25 @@ class Chip8:
         elif opcode & 0xF000 == 0xA000:  # ANNN: set I = NNN
             # Matches ANNN: Set I = NNN
             nnn = opcode & 0x0FFF
-            self.I = nnn
+            self.i = nnn
         elif opcode & 0xF000 == 0xD000:  # DXYN: draw sprite
             # Matches DXYN: Draw sprite at (Vx, Vy) with N bytes of sprite data
-            x = self.V[(opcode & 0x0F00) >> 8]
-            y = self.V[(opcode & 0x00F0) >> 4]
+            x = self.v[(opcode & 0x0F00) >> 8]
+            y = self.v[(opcode & 0x00F0) >> 4]
             height = opcode & 0x000F
-            self.V[0xF] = 0
+            self.v[0xF] = 0
             for row in range(height):
-                pixel = self.memory[self.I + row]
+                pixel = self.memory[self.i + row]
                 for col in range(8):
                     if (pixel & (0x80 >> col)) != 0:
                         if self.gfx[(y + row) % 32][(x + col) % 64] == 1:
-                            self.V[0xF] = 1
+                            self.v[0xF] = 1
                         self.gfx[(y + row) % 32][(x + col) % 64] ^= 1
         elif opcode & 0xF000 == 0x7000:  # 7XNN: add NN to VX
             # Matches 7XNN: Add NN to Vx
             x = (opcode & 0x0F00) >> 8
             nn = opcode & 0x00FF
-            self.V[x] = (self.V[x] + nn) & 0xFF
+            self.v[x] = (self.v[x] + nn) & 0xFF
         elif opcode & 0xF000 == 0x1000:  # 1NNN: jump to address NNN
             # Matches 1NNN: Jump to address NNN
             nnn = opcode & 0x0FFF
@@ -147,42 +137,42 @@ class Chip8:
         elif opcode & 0xF000 == 0xF000 and opcode & 0x00FF == 0x33:  # Fx33: LD B, Vx
             # Matches Fx33: Store BCD of Vx at I, I+1, I+2
             x = (opcode & 0x0F00) >> 8
-            value = self.V[x]
-            self.memory[self.I]     = value // 100         # Hundreds digit
-            self.memory[self.I + 1] = (value // 10) % 10   # Tens digit
-            self.memory[self.I + 2] = value % 10           # Ones digit
+            value = self.v[x]
+            self.memory[self.i]     = value // 100         # Hundreds digit
+            self.memory[self.i + 1] = (value // 10) % 10   # Tens digit
+            self.memory[self.i + 2] = value % 10           # Ones digit
         elif opcode & 0xF000 == 0xF000 and opcode & 0x00FF == 0x65: # read Read registers V0 through Vx from memory starting at address I.
             # Matches Fx65: Read registers V0 through Vx from memory starting at I
             x = (opcode & 0x0F00) >> 8
             for i in range(x + 1):
-                self.V[i] = self.memory[self.I + i]
+                self.v[i] = self.memory[self.i + i]
 
         elif opcode & 0xF000 == 0xF000 and opcode & 0x00FF == 0x29:
             # Matches Fx29: Set I to location of sprite for digit Vx
             x = (opcode & 0x0F00) >> 8
-            self.I = self.V[x] * 5  # Each font sprite is 5 bytes
+            self.i = self.v[x] * 5  # Each font sprite is 5 bytes
 
         elif opcode & 0xF000 == 0xF000 and opcode & 0x00FF == 0x07:
             # Matches Fx07: Set Vx = delay timer
             x = (opcode & 0x0F00) >> 8
-            self.V[x] = self.delay_timer
+            self.v[x] = self.delay_timer
 
         elif opcode & 0xF000 == 0xF000 and opcode & 0x00FF == 0x15:
             # Matches Fx15: Set delay timer = Vx
             x = (opcode & 0x0F00) >> 8
-            self.delay_timer = self.V[x]
+            self.delay_timer = self.v[x]
 
         elif opcode & 0xF0FF == 0xE0A1:
             # Matches ExA1: Skip next instruction if key[Vx] is not pressed
             x = (opcode & 0x0F00) >> 8
-            vx = self.V[x] & 0xF
+            vx = self.v[x] & 0xF
             if not self.key[vx]:
                 self.pc += 2
 
         elif opcode & 0xF0FF == 0xE09E:
             # Matches Ex9E: Skip next instruction if key[Vx] is pressed
             x = (opcode & 0x0F00) >> 8
-            vx = self.V[x] & 0xF
+            vx = self.v[x] & 0xF
             if self.key[vx]:
                 self.pc += 2
 
@@ -190,77 +180,77 @@ class Chip8:
             # Matches CXNN: Set Vx = random byte & NN
             x = (opcode & 0x0F00) >> 8
             kk = opcode & 0x00FF
-            self.V[x] = random.randint(0, 255) & kk
+            self.v[x] = random.randint(0, 255) & kk
 
         elif opcode & 0xF00F == 0x8002:
             # Matches 8XY2: Set Vx = Vx & Vy
             x = (opcode & 0x0F00) >> 8
             y = (opcode & 0x00F0) >> 4
-            self.V[x] = self.V[x] & self.V[y]
+            self.v[x] = self.v[x] & self.v[y]
 
         elif opcode & 0xF00F == 0x8004:
             # Matches 8XY4: Set Vx = Vx + Vy, set VF = carry
             x = (opcode & 0x0F00) >> 8
             y = (opcode & 0x00F0) >> 4
-            result = self.V[x] + self.V[y]
-            self.V[0xF] = 1 if result > 0xFF else 0
-            self.V[x] = result & 0xFF
+            result = self.v[x] + self.v[y]
+            self.v[0xF] = 1 if result > 0xFF else 0
+            self.v[x] = result & 0xFF
 
         elif opcode & 0xF000 == 0x4000:
             # Matches 4XNN: Skip next instruction if Vx != NN
             x = (opcode & 0x0F00) >> 8
             kk = opcode & 0x00FF
-            if self.V[x] != kk:
+            if self.v[x] != kk:
                 self.pc += 2  # Skip next instruction
 
         elif opcode & 0xF00F == 0x8000:
             # Matches 8xyN: Copy Y to X so (x = y)
             x = (opcode & 0x0F00) >> 8
             y = (opcode & 0x00F0) >> 4
-            self.V[x] = self.V[y]
+            self.v[x] = self.v[y]
 
         elif opcode & 0xF00F == 0x8005:
             # Matches 8xy5: Subtract X from Y
             x = (opcode & 0x0F00) >> 8
             y = (opcode & 0x00F0) >> 4
-            self.V[0xF] = 1 if self.V[x] >= self.V[y] else 0
-            self.V[x] = (self.V[x] - self.V[y]) & 0xFF
+            self.v[0xF] = 1 if self.v[x] >= self.v[y] else 0
+            self.v[x] = (self.v[x] - self.v[y]) & 0xFF
 
         elif opcode & 0xF0FF == 0xF018:
             # Matches Fx18: copies x to sound_timer
             x = (opcode & 0x0F00) >> 8
-            self.sound_timer = self.V[x]
+            self.sound_timer = self.v[x]
 
         elif opcode & 0xF00F == 0x5000:
             x = (opcode & 0x0F00) >> 8
             y = (opcode & 0x00F0) >> 4
-            if self.V[x] == self.V[y]:
+            if self.v[x] == self.v[y]:
                 self.pc += 2
 
         elif opcode & 0xF00F == 0x8006:
             # Matches 8xy6: Set Vx = Vx >> 1, VF = least significant bit of Vx before shift
             x = (opcode & 0x0F00) >> 8
-            self.V[0xF] = self.V[x] & 0x1
-            self.V[x] = self.V[x] >> 1
+            self.v[0xF] = self.v[x] & 0x1
+            self.v[x] = self.v[x] >> 1
 
         elif opcode & 0xF00F == 0x8007:
             # Matches 8xy7: Set Vx = Vy - Vx, VF = 1 if Vy > Vx else 0
             x = (opcode & 0x0F00) >> 8
             y = (opcode & 0x00F0) >> 4
-            self.V[0xF] = 1 if self.V[y] > self.V[x] else 0
-            self.V[x] = (self.V[y] - self.V[x]) & 0xFF
+            self.v[0xF] = 1 if self.v[y] > self.v[x] else 0
+            self.v[x] = (self.v[y] - self.v[x]) & 0xFF
 
         elif opcode & 0xF00F == 0x800E:
             # Matches 8xyE: Set Vx = Vx << 1, VF = most significant bit of Vx before shift
             x = (opcode & 0x0F00) >> 8
-            self.V[0xF] = (self.V[x] & 0x80) >> 7
-            self.V[x] = (self.V[x] << 1) & 0xFF
+            self.v[0xF] = (self.v[x] & 0x80) >> 7
+            self.v[x] = (self.v[x] << 1) & 0xFF
 
         elif opcode & 0xF00F == 0x9000:
             # Matches 9xy0: Skip next instruction if Vx != Vy
             x = (opcode & 0x0F00) >> 8
             y = (opcode & 0x00F0) >> 4
-            if self.V[x] != self.V[y]:
+            if self.v[x] != self.v[y]:
                 self.pc += 2
             else:
                 pass
@@ -271,7 +261,7 @@ class Chip8:
             # If a key is already pressed, store it and continue.
             for i in range(16):
                 if self.key[i]:
-                    self.V[x] = i
+                    self.v[x] = i
                     break
             else:
                 # No key pressed: enter waiting state. Back up PC so the
@@ -283,51 +273,45 @@ class Chip8:
         elif opcode & 0xF0FF == 0xF01E:
             # Matches Fx1E: Adds x to I
             x = (opcode & 0x0F00) >> 8
-            self.I = (self.I + self.V[x]) & 0xFFFF  # I is 12 bits, but 16 is safe
+            self.i = (self.i + self.v[x]) & 0xFFFF  # I is 12 bits, but 16 is safe
 
         elif opcode & 0xF0FF == 0xF055:
             # Matches Fx55: Store V0 to Vx in memory starting at I
             x = (opcode & 0x0F00) >> 8
             for i in range(x + 1):
-                self.memory[self.I + i] = self.V[i]
+                self.memory[self.i + i] = self.v[i]
 
         elif opcode & 0xF00F == 0x8001:
             # Matches 8xy1: Set Vx = Vx | Vy (bitwise OR)
             x = (opcode & 0x0F00) >> 8
             y = (opcode & 0x00F0) >> 4
-            self.V[x] = self.V[x] | self.V[y]
+            self.v[x] = self.v[x] | self.v[y]
 
         elif opcode & 0xF00F == 0x8003:
             # Matches 8xy3: Set Vx = Vx ^ Vy (bitwise XOR)
             x = (opcode & 0x0F00) >> 8
             y = (opcode & 0x00F0) >> 4
-            self.V[x] = self.V[x] ^ self.V[y]
+            self.v[x] = self.v[x] ^ self.v[y]
 
         elif opcode & 0xF000 == 0xB000:
             # Matches BNNN: Jump to address NNN + V0
             nnn = opcode & 0x0FFF
-            self.pc = nnn + self.V[0]
+            self.pc = nnn + self.v[0]
 
         elif opcode & 0xF0FF == 0xF075:
             # Matches Fx75: Load Vx into R
             x = (opcode & 0x0F00) >> 8
             for i in range(x + 1):
-                self.R[i] = self.V[i]
+                self.r[i] = self.v[i]
 
         elif opcode & 0xF0FF == 0xF085:
-            # Fx85: Load V0..Vx from R[0..x]
+            # Fx85: Load V0..vx from R[0..x]
             x = (opcode & 0x0F00) >> 8
             for i in range(x + 1):
-                self.V[i] = self.R[i]
+                self.v[i] = self.r[i]
 
         elif opcode & 0x00FF == 0x00FD:
             sys.exit()
-
-        elif opcode & 0x00FF == 0x00FE:
-            self.resMode = "low"
-
-        elif opcode & 0x00FF == 0x00FF:
-            self.resMode = "high"
 
         elif opcode & 0x00FF == 0x00CF:
             # Matches 00CN: moves screen down by N
@@ -362,126 +346,128 @@ class Chip8:
     def show_message(self, title, text):
         messagebox.showinfo(title, text)
 
-def start_emulator(rom_path):
-    global emu_thread, chip
-    # If an emulator is already running, halt it and wait for thread to finish
-    if chip is not None:
-        # signal the previous thread to stop
-        chip.running = False
-    if emu_thread is not None and emu_thread.is_alive():
-        emu_thread.join()
-    chip = None
-    emu_thread = None
-    # Create a new Chip8 instance and start the emulator thread
-    chip = Chip8()
-    chip.load_rom(rom_path)
-    emu_thread = threading.Thread(target=main, args=(chip,))
-    emu_thread.daemon = True
-    emu_thread.start()
+class EmulatorApp:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.chip = None
+        self.emu_thread = None
+        self.key_map = {
+            pygame.K_1: 0x1, pygame.K_2: 0x2, pygame.K_3: 0x3, pygame.K_4: 0xC,
+            pygame.K_q: 0x4, pygame.K_w: 0x5, pygame.K_e: 0x6, pygame.K_r: 0xD,
+            pygame.K_a: 0x7, pygame.K_s: 0x8, pygame.K_d: 0x9, pygame.K_f: 0xE,
+            pygame.K_z: 0xA, pygame.K_x: 0x0, pygame.K_c: 0xB, pygame.K_v: 0xF,
+        }
 
-def file_picker():
-    rom = askopenfilename()
-    if rom:
-        start_emulator(rom)
-    else:
-        try:
-            rom = "roms/PONG.ch8"
-            start_emulator(rom)
-        except FileNotFoundError:
-            print("PONG.ch8 not found, no fallback")
+        fpBtn = tk.Button(self.root, text="Load ROM", command=self.file_picker)
+        fpBtn.pack()
+        haltBtn = tk.Button(self.root, text="Halt Emulation", command=self.halt_emu)
+        haltBtn.pack()
+        unhaltBtn = tk.Button(self.root, text="Unhalt Emulation", command=self.unhalt_emu)
+        unhaltBtn.pack()
 
-def halt_emu():
-    global chip, emu_thread
-    try:
-        if chip is not None:
-            # Pause emulation instead of stopping the thread so unhalt can resume
-            chip.halted = True
+    def start_emulator(self, rom_path):
+        # Stop any previous instance
+        if self.chip is not None:
+            self.chip.running = False
+        if self.emu_thread is not None and self.emu_thread.is_alive():
+            self.emu_thread.join()
+
+        # Start new emulator
+        self.chip = Chip8()
+        self.chip.load_rom(rom_path)
+        self.emu_thread = threading.Thread(target=self.main)
+        self.emu_thread.daemon = True
+        self.emu_thread.start()
+
+    def file_picker(self):
+        rom = askopenfilename()
+        if rom:
+            self.start_emulator(rom)
+        else:
+            try:
+                rom = "roms/PONG.ch8"
+                self.start_emulator(rom)
+            except FileNotFoundError:
+                print("PONG.ch8 not found, no fallback")
+
+    def halt_emu(self):
+        if self.chip is not None:
+            self.chip.halted = True
             print("Emulator halted (paused)")
         else:
             print("Emulator not started, nothing to halt...")
-    except AttributeError:
-        print("Emulator not started, nothing to halt...")
 
-def unhalt_emu():
-    global chip, emu_thread
-    try:
-        if chip is not None and emu_thread is not None and not emu_thread.is_alive():
+    def unhalt_emu(self):
+        if self.chip is not None and self.emu_thread is not None and not self.emu_thread.is_alive():
             print("Emulator thread is not running. Please load a ROM to restart.")
-        elif chip is not None and emu_thread is not None and emu_thread.is_alive():
-            chip.halted = False
+        elif self.chip is not None and self.emu_thread is not None and self.emu_thread.is_alive():
+            self.chip.halted = False
             print("Emulator unhalted (resumed)")
         else:
             print("Emulator not started, nothing to unhalt...")
-    except AttributeError:
-        print("Emulator not started, nothing to unhalt...")
 
-def main(chip):
-    pygame.init()
-    window = pygame.display.set_mode((640, 320))  # 10x scale
-    clock = pygame.time.Clock()
-    pygame.mixer.init()
-    pygame.display.set_caption("CHIP-8")
-    beep = pygame.mixer.Sound("tone.wav")
-    try:
-        while chip.running:
-            if chip.halted:
-                # paused — sleep briefly to avoid busy-loop
-                time.sleep(0.01)
-                continue
+    def main(self):
+        pygame.init()
+        window = pygame.display.set_mode((640, 320))  # 10x scale
+        clock = pygame.time.Clock()
+        try:
+            pygame.mixer.init()
+            try:
+                beep = pygame.mixer.Sound("tone.wav")
+            except pygame.error:
+                beep = None
+        except pygame.error:
+            beep = None
+        pygame.display.set_caption("CHIP-8")
+        try:
+            while self.chip and self.chip.running:
+                if self.chip.halted:
+                    time.sleep(0.01)
+                    continue
 
-            chip.cycle()
+                self.chip.cycle()
 
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    chip.halted = True
-                    chip.running = False
-                    pygame.quit()
-                    sys.exit()
-                elif event.type == pygame.KEYDOWN:
-                    if event.key in key_map:
-                        chip.key[key_map[event.key]] = 1
-                elif event.type == pygame.KEYUP:
-                    if event.key in key_map:
-                        chip.key[key_map[event.key]] = 0
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        self.chip.halted = True
+                        self.chip.running = False
+                        pygame.quit()
+                        sys.exit()
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key in self.key_map:
+                            self.chip.key[self.key_map[event.key]] = 1
+                    elif event.type == pygame.KEYUP:
+                        if event.key in self.key_map:
+                            self.chip.key[self.key_map[event.key]] = 0
 
-            if chip.sound_timer > 0:
-                beep.play()
+                if self.chip.sound_timer > 0 and beep:
+                    try:
+                        beep.play()
+                    except pygame.error:
+                        pass
 
-            # If we're waiting for a key, sleep briefly to avoid busy-looping
-            # while still processing events above.
-            if chip.waiting_for_key is not None:
-                time.sleep(0.01)
+                if self.chip.waiting_for_key is not None:
+                    time.sleep(0.01)
 
-            # Draw graphics
-            window.fill((0, 0, 0))
-            if chip.resMode == "low":
+                window.fill((0, 0, 0))
                 for y in range(32):
                     for x in range(64):
-                        if chip.gfx[y][x]:
+                        if self.chip.gfx[y][x]:
                             pygame.draw.rect(window, (255, 255, 255), (x*10, y*10, 10, 10))
-            else:
-                for y in range(64):
-                    for x in range(128):
-                        if chip.gfx[y][x]:
-                            pygame.draw.rect(window, (255, 255, 255), (x*10, y*10, 10, 10))
-            pygame.display.flip()
+                pygame.display.flip()
 
-            clock.tick(240)
-    finally:
-        try:
-            pygame.mixer.quit()
-        except Exception:
-            pass
-        try:
-            pygame.quit()
-        except Exception:
-            pass
+                clock.tick(240)
+        finally:
+            try:
+                pygame.mixer.quit()
+            except pygame.error:
+                pass
+            try:
+                pygame.quit()
+            except pygame.error:
+                pass
+
 
 if __name__ == "__main__":
-    fpBtn = tk.Button(root, text="Load ROM", command=file_picker)
-    fpBtn.pack()
-    haltBtn = tk.Button(root, text="Halt Emulation", command=halt_emu)
-    haltBtn.pack()
-    unhaltBtn = tk.Button(root, text="Unhalt Emulation", command=unhalt_emu)
-    unhaltBtn.pack()
-    root.mainloop()
+    app = EmulatorApp()
+    app.root.mainloop()

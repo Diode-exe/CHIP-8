@@ -6,4 +6,4 @@ The ROMs and JSON are from [John Earnest](https://github.com/JohnEarnest/chip8Ar
 
 GUI is pygame
 
-Partial Super CHIP-8 support
+Would not recommend running Super Chip-8 ROMs, as they are not supported
