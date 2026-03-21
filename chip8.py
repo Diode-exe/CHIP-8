@@ -52,12 +52,14 @@ class Chip8:
         self.waiting_for_key = None
 
     def load_rom(self, rom):
+        """Loads a CHIP-8 ROM into memory starting at address 0x200."""
         with open(rom, "rb") as f:
             rom = f.read()
             for i, byte in enumerate(rom):
                 self.memory[0x200 + i] = byte
 
     def cycle(self):
+        """Executes one cycle of the CHIP-8 CPU, including fetching, decoding, and executing"""
         # If we're waiting for a key (Fx0A), poll the key state and only
         # resume execution when one is pressed. This keeps the event loop
         # responsive and avoids re-executing the instruction in a busy way.
@@ -126,6 +128,7 @@ class Chip8:
             # Matches 1NNN: Jump to address NNN
             nnn = opcode & 0x0FFF
             self.pc = nnn
+
         elif opcode & 0xF000 == 0x0000 and opcode & 0x00FF == 0xEE:  # 00EE: return from subroutine
             # Matches 00EE: Return from subroutine
             if self.stack:
@@ -134,6 +137,7 @@ class Chip8:
                 print("Stack underflow!")
                 self.halted = True
                 self.show_message("Halted!", "Emulator halted due to stack underflow!")
+
         elif opcode & 0xF000 == 0xF000 and opcode & 0x00FF == 0x33:  # Fx33: LD B, Vx
             # Matches Fx33: Store BCD of Vx at I, I+1, I+2
             x = (opcode & 0x0F00) >> 8
@@ -141,7 +145,9 @@ class Chip8:
             self.memory[self.i]     = value // 100         # Hundreds digit
             self.memory[self.i + 1] = (value // 10) % 10   # Tens digit
             self.memory[self.i + 2] = value % 10           # Ones digit
-        elif opcode & 0xF000 == 0xF000 and opcode & 0x00FF == 0x65: # read Read registers V0 through Vx from memory starting at address I.
+
+        # read Read registers V0 through Vx from memory starting at address I.
+        elif opcode & 0xF000 == 0xF000 and opcode & 0x00FF == 0x65:
             # Matches Fx65: Read registers V0 through Vx from memory starting at I
             x = (opcode & 0x0F00) >> 8
             for i in range(x + 1):
@@ -344,9 +350,12 @@ class Chip8:
             self.sound_timer -= 1
 
     def show_message(self, title, text):
+        """Utility method to show a message box with the given title and text."""
         messagebox.showinfo(title, text)
 
 class EmulatorApp:
+    """Main application class that sets up the GUI, handles user interactions,
+    and runs the emulator loop in a separate thread."""
     def __init__(self):
         self.root = tk.Tk()
         self.chip = None
@@ -358,14 +367,16 @@ class EmulatorApp:
             pygame.K_z: 0xA, pygame.K_x: 0x0, pygame.K_c: 0xB, pygame.K_v: 0xF,
         }
 
-        fpBtn = tk.Button(self.root, text="Load ROM", command=self.file_picker)
-        fpBtn.pack()
-        haltBtn = tk.Button(self.root, text="Halt Emulation", command=self.halt_emu)
-        haltBtn.pack()
-        unhaltBtn = tk.Button(self.root, text="Unhalt Emulation", command=self.unhalt_emu)
-        unhaltBtn.pack()
+        fp_btn = tk.Button(self.root, text="Load ROM", command=self.file_picker)
+        fp_btn.pack()
+        halt_btn = tk.Button(self.root, text="Halt Emulation", command=self.halt_emu)
+        halt_btn.pack()
+        unhalt_btn = tk.Button(self.root, text="Unhalt Emulation", command=self.unhalt_emu)
+        unhalt_btn.pack()
 
     def start_emulator(self, rom_path):
+        """Starts the emulator with the given ROM path.
+        If an emulator instance is already running, it will be stopped first."""
         # Stop any previous instance
         if self.chip is not None:
             self.chip.running = False
@@ -380,6 +391,8 @@ class EmulatorApp:
         self.emu_thread.start()
 
     def file_picker(self):
+        """Opens a file dialog to select a ROM, and starts the emulator with the selected ROM.
+        If no ROM is selected, it attempts to load a default PONG.ch8 ROM as a fallback."""
         rom = askopenfilename()
         if rom:
             self.start_emulator(rom)
@@ -391,6 +404,7 @@ class EmulatorApp:
                 print("PONG.ch8 not found, no fallback")
 
     def halt_emu(self):
+        """Halts (pauses) the emulator. If the emulator is not running, it will show a message."""
         if self.chip is not None:
             self.chip.halted = True
             print("Emulator halted (paused)")
@@ -398,6 +412,8 @@ class EmulatorApp:
             print("Emulator not started, nothing to halt...")
 
     def unhalt_emu(self):
+        """Unhalts (resumes) the emulator.
+        If the emulator is not running, it will show a message."""
         if self.chip is not None and self.emu_thread is not None and not self.emu_thread.is_alive():
             print("Emulator thread is not running. Please load a ROM to restart.")
         elif self.chip is not None and self.emu_thread is not None and self.emu_thread.is_alive():
@@ -407,6 +423,7 @@ class EmulatorApp:
             print("Emulator not started, nothing to unhalt...")
 
     def main(self):
+        """Main loop of the emulator, handling events, updating the display, and managing timers."""
         pygame.init()
         window = pygame.display.set_mode((640, 320))  # 10x scale
         clock = pygame.time.Clock()
