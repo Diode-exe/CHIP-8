@@ -84,6 +84,7 @@ class Chip8:
         elif opcode == 0x00E0:  # Clear screen
             # Matches 00E0: Clear the display
             self.gfx = [[0] * 64 for _ in range(32)]
+            print(opcode)
         elif opcode & 0xF000 == 0x3000:
             # Matches 3XNN: Skip next instruction if Vx == NN
             x = (opcode & 0x0F00) >> 8
